@@ -1,0 +1,21 @@
+Validation: MODEL vs BASELINE (oracle)
+============================================================
+Constraints: PSNR >= 80, SSIM >= 0.9
+
+Validation — MODEL vs BASELINE (pressio oracle on sweep grid)
+  BASELINE (oracle):
+    error_bound       = 0.000233572
+    compression_ratio = 86.017100
+    psnr              = 84.068200
+    ssim              = 0.978844
+  MODEL FINAL (measured at chosen e via sweep curve):
+    error_bound       = 0.000333811
+    compression_ratio = 101.929909
+    psnr              = 81.150929
+    ssim              = 0.973253
+  MAPE (%) = |model - oracle| / |oracle| * 100
+    error_bound         42.915
+    compression_ratio   18.500
+    psnr                 3.470
+    ssim                 0.571
+    median              10.985

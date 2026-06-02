@@ -1,0 +1,69 @@
+Three-phase MODEL output
+========================================================================
+(Phase 1 + 2 + 3 are the model; Phase 3 below is MODEL FINAL)
+input_file : CLOUDf01.bin
+sweep_csv  : /anvil/projects/x-cis240669/Hurricane/results/CLOUDf01_sz3_sweep.csv
+PSNR_min   : 80
+SSIM_min   : 0.9
+e_range    : [1e-06, 0.1]
+
+Phase 1 — surrogates (Lasso, degree=4)
+  PSNR R2=0.999318 RMSE=0.733398
+  SSIM R2=0.994678 RMSE=0.00553032
+  CR R2=0.970928 RMSE=237.047
+
+Training-grid reference (best feasible on sweep points):
+  e        = 0.000233572146909
+  cr       = 86.0171
+  psnr     = 84.0682
+  ssim     = 0.978844
+
+Phase 2 — Lagrangian + surrogate grid optimum:
+  selected_method = surrogate_grid
+  e          = 0.0003854783576657717
+  cr         = 108.79999606110235
+  psnr       = 80.00126806485326
+  ssim       = 0.9725038947924619
+
+  Augmented Lagrangian best feasible iterate:
+    t          = 1
+    lam1       = 7.970708491740197
+    lam2       = 0.0
+    rho        = 10000.0
+    e          = 1e-06
+    cr         = 15.355140799685055
+    psnr       = 130.52247699854138
+    ssim       = 0.9991440292014713
+    g_psnr     = 50.52247699854138
+    g_ssim     = 0.09914402920147125
+    feasible   = True
+
+Direct monotone-cap e* = 0.000385523
+
+MODEL FINAL — Phase 3 wise search (sweep-calibrated):
+  error_bound        = 0.00033381050516598926
+  compression_ratio  = 101.92990897000335
+  psnr               = 81.15092927999939
+  ssim               = 0.9732533108999989
+  compression_ratio_hat = 101.07476818118641
+  psnr_hat           = 81.15035074076913
+  ssim_hat           = 0.9744643365765036
+  feasible           = True
+
+Validation — MODEL vs BASELINE (pressio oracle on sweep grid)
+  BASELINE (oracle):
+    error_bound       = 0.000233572
+    compression_ratio = 86.017100
+    psnr              = 84.068200
+    ssim              = 0.978844
+  MODEL FINAL (measured at chosen e via sweep curve):
+    error_bound       = 0.000333811
+    compression_ratio = 101.929909
+    psnr              = 81.150929
+    ssim              = 0.973253
+  MAPE (%) = |model - oracle| / |oracle| * 100
+    error_bound         42.915
+    compression_ratio   18.500
+    psnr                 3.470
+    ssim                 0.571
+    median              10.985
