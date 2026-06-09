@@ -1,0 +1,14 @@
+Phase 2: quadratic-penalty method (three_phase_optimize.run_phase2)
+============================================================
+min -CR_hat(e) + mu*(viol_PSNR^2 + viol_SSIM^2)   on x = log10(e)
+constraints:  PSNR_hat >= 85,  SSIM_hat >= 0.99
+e range: [1e-06, 0.1]
+mu-rounds: 13
+
+Selected Phase-2 model (method=lagrangian_penalty):
+  mu     = 1e+10
+  e      = 5.89368e-05
+  cr     = 46.010185
+  psnr   = 95.276782  (g=+10.2768)
+  ssim   = 0.990000  (g=-1.62988e-07)
+  feasible = True

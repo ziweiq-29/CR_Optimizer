@@ -1,0 +1,14 @@
+# Phase 1: Lasso surrogates
+# Source: /anvil/projects/x-cis240669/Hurricane/results/CLOUDf01_sz3_sweep.csv
+
+# PSNR transform=none  N=20  alpha=0.086455  R2=0.999318  RMSE=0.733398
+PSNR(e) = 22.6478 - 15.2422 * log10(e) + 0.456155 * log10(e)^2
+
+# SSIM transform=logit  N=20  alpha=0.00183588  R2=0.994678  RMSE=0.00553032
+SSIM(e) = 0.279661 - 0.694108 * log10(e) + 0.0814595 * log10(e)^2 - 0.000242618 * log10(e)^4
+SSIM(e) = 1 / (1 + exp(-SSIM(e)))
+
+# CR transform=log10  N=20  alpha=0.000760573  R2=0.970928  RMSE=237.047
+log10_CR(e) = 4.58588 + 0.967678 * log10(e) + 0.0619267 * log10(e)^2 - 0.000819819 * log10(e)^3
+CR(e) = 10 ** (log10_CR(e))
+
