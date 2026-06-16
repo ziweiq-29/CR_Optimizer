@@ -7,6 +7,9 @@ Cases:
   cloud_timesteps  — same field (CLOUD), multiple timesteps f01..fN;
                      per timestep: 20-pt train + own 10k oracle;
                      aggregate mean / p05 / p95 / var of R² across timesteps
+  fields           — different fields at one timestep (default f01);
+                     per field: 20-pt train + own 10k oracle;
+                     aggregate mean / p05 / p95 / var of R² across fields
 
 Example (same field):
     python surrogate_r2_heatmap.py --case same_field \\
@@ -22,6 +25,21 @@ Example (CLOUD timesteps f01-f24):
       --timesteps 1-24 \\
       --degrees 1,2,3,4,5,6,7,8 --n-alphas 40 \\
       --out ../Hurricane/results/r2_heatmaps_cloud
+
+Example (different fields at f01):
+    python surrogate_r2_heatmap.py --case fields \\
+      --results-dir ../Hurricane/results \\
+      --sweeps-dir ../Hurricane/results/sweeps \\
+      --fields CLOUD,P,PRECIP,QCLOUD,QGRAUP --timestep 1 \\
+      --degrees 1,2,3,4,5,6,7,8 --n-alphas 40 \\
+      --out ../Hurricane/results/r2_heatmaps_fields
+
+Prerequisite sweeps per field/timestep (single runner, choose bin via --input):
+    cd ../Hurricane
+    python run_cloudf01_pressio_sweep.py --input PRECIPf01.bin --n 20 \\
+      --out results/PRECIPf01_sz3_sweep.csv --jobs 32 --resume
+    python run_cloudf01_pressio_sweep.py --input PRECIPf01.bin --n 10000 \\
+      --out results/sweeps/PRECIPf01_baseline10k.csv --jobs 32 --resume
 """
 
 from __future__ import annotations
@@ -122,6 +140,45 @@ def load_cloud_timestep_replicates(
     out = []
     for idx in timestep_indices:
         name = stem(field_prefix, idx)
+        train_csv, baseline_csv = resolve_timestep_pair(
+            results_dir, sweeps_dir, name,
+        )
+        df_train = load_sweep_csv(train_csv)
+        df_baseline = load_sweep_csv(baseline_csv)
+        out.append((name, df_train, df_baseline))
+    return out
+
+
+def parse_field_list(spec: str) -> list[str]:
+    return [x.strip() for x in spec.split(",") if x.strip()]
+
+
+def discover_fields(hurricane_dir: str, timestep: int, n: int) -> list[str]:
+    """First *n* field prefixes (sorted) that have {prefix}f{tt}.bin."""
+    suffix = "f{:02d}.bin".format(timestep)
+    prefixes = sorted(
+        fname[: -len(suffix)]
+        for fname in os.listdir(hurricane_dir)
+        if fname.endswith(suffix)
+        and os.path.isfile(os.path.join(hurricane_dir, fname))
+    )
+    return prefixes[:n]
+
+
+def load_field_replicates(
+    results_dir: str,
+    sweeps_dir: str,
+    field_prefixes: list[str],
+    timestep: int,
+) -> list[tuple[str, pd.DataFrame, pd.DataFrame]]:
+    """List of (label, df_train, df_baseline) per field at one timestep.
+
+    Reuses resolve_timestep_pair: the {STEM} = {field}f{tt} naming is shared
+    between the timesteps case and the fields case.
+    """
+    out = []
+    for prefix in field_prefixes:
+        name = stem(prefix, timestep)
         train_csv, baseline_csv = resolve_timestep_pair(
             results_dir, sweeps_dir, name,
         )
@@ -382,11 +439,64 @@ def run_cloud_timesteps(args, degrees, alphas):
     return grids, "cloud_timesteps", written, summary
 
 
+def run_fields(args, degrees, alphas):
+    if args.fields:
+        fields = parse_field_list(args.fields)
+    else:
+        fields = discover_fields(args.hurricane_dir, args.timestep, args.n_fields)
+    replicates = load_field_replicates(
+        args.results_dir, args.sweeps_dir, fields, args.timestep,
+    )
+
+    print("Multi-field R² heatmap scan")
+    print("  hurricane  : {}".format(args.hurricane_dir))
+    print("  results_dir: {}".format(args.results_dir))
+    print("  sweeps_dir : {}".format(args.sweeps_dir))
+    print("  timestep   : f{:02d}".format(args.timestep))
+    print("  fields     : {}".format(fields))
+    print("  replicates : {}".format(len(replicates)))
+    for label, df_t, df_b in replicates:
+        print("    {}  train={}  baseline={}".format(label, len(df_t), len(df_b)))
+    print("  degrees    : {}".format(degrees))
+    print("  alphas     : {} values [{:.3g}, {:.3g}]".format(
+        len(alphas), alphas.min(), alphas.max()))
+    print()
+
+    grids = run_replicate_grid(
+        replicates, degrees, alphas,
+        bootstrap_per_replicate=1,
+        seed=args.seed,
+        case_label="fields",
+    )
+    case_dir = os.path.join(args.out, "fields")
+    written = plot_case_heatmaps(
+        grids, degrees, alphas, case_dir,
+        "Hurricane fields (f{:02d})".format(args.timestep),
+        single_r2=False,
+    )
+    summary = [
+        "Multi-field R² heatmaps (oracle per field, timestep f{:02d})".format(
+            args.timestep),
+        "=" * 60,
+        "hurricane_dir: {}".format(args.hurricane_dir),
+        "results_dir  : {}".format(args.results_dir),
+        "sweeps_dir   : {}".format(args.sweeps_dir),
+        "fields       : {}".format(fields),
+        "n_replicates : {}".format(len(replicates)),
+        "degrees      : {}".format(degrees),
+        "n_alphas     : {}".format(len(alphas)),
+        "",
+        "Per field: fit on 20-pt train, R² on that field's 10k oracle.",
+        "Heatmap stats: mean / p05 / p95 / var across fields.",
+    ]
+    return grids, "fields", written, summary
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument(
-        "--case", choices=["same_field", "cloud_timesteps"],
+        "--case", choices=["same_field", "cloud_timesteps", "fields"],
         default="same_field",
     )
     ap.add_argument("--train-csv", default=None,
@@ -394,12 +504,20 @@ def main():
     ap.add_argument("--baseline-csv", default=None,
                     help="10k oracle CSV (same_field case)")
     ap.add_argument("--results-dir", default=None,
-                    help="train CSVs: {STEM}_sz3_sweep.csv (cloud_timesteps)")
+                    help="train CSVs: {STEM}_sz3_sweep.csv (cloud_timesteps/fields)")
     ap.add_argument("--sweeps-dir", default=None,
-                    help="oracle CSVs: {STEM}_baseline10k.csv (cloud_timesteps)")
+                    help="oracle CSVs: {STEM}_baseline10k.csv (cloud_timesteps/fields)")
     ap.add_argument("--field-prefix", default="CLOUD")
     ap.add_argument("--timesteps", default="1-24",
-                    help="e.g. 1-24 for CLOUDf01..f24")
+                    help="e.g. 1-24 for CLOUDf01..f24 (cloud_timesteps)")
+    ap.add_argument("--hurricane-dir", default=None,
+                    help="dir with {FIELD}f{tt}.bin (fields case)")
+    ap.add_argument("--fields", default=None,
+                    help="comma-separated prefixes, e.g. CLOUD,P,PRECIP (fields)")
+    ap.add_argument("--n-fields", type=int, default=5,
+                    help="fields case: first N fields when --fields omitted")
+    ap.add_argument("--timestep", type=int, default=1,
+                    help="fields case: single timestep index (f01, f02, ...)")
     ap.add_argument("--degrees", default="1,2,3,4,5,6,7,8")
     ap.add_argument("--n-alphas", type=int, default=40)
     ap.add_argument("--alpha-min", type=float, default=None)
@@ -415,16 +533,16 @@ def main():
         print("ERROR: --degrees is empty", file=sys.stderr)
         sys.exit(2)
 
+    hurricane_dir = os.path.join(os.path.dirname(_SCRIPT_DIR), "Hurricane")
+    hurricane_results = os.path.join(hurricane_dir, "results")
+
     if args.case == "same_field":
         if not args.train_csv or not args.baseline_csv:
             print("ERROR: same_field requires --train-csv and --baseline-csv",
                   file=sys.stderr)
             sys.exit(2)
         ref_train = load_sweep_csv(args.train_csv)
-    else:
-        hurricane_results = os.path.join(
-            os.path.dirname(_SCRIPT_DIR), "Hurricane", "results",
-        )
+    elif args.case == "cloud_timesteps":
         if args.results_dir is None:
             args.results_dir = hurricane_results
         if args.sweeps_dir is None:
@@ -433,6 +551,27 @@ def main():
         train_csv, _ = resolve_timestep_pair(
             args.results_dir, args.sweeps_dir,
             stem(args.field_prefix, indices[0]),
+        )
+        ref_train = load_sweep_csv(train_csv)
+    else:  # fields
+        if args.hurricane_dir is None:
+            args.hurricane_dir = hurricane_dir
+        if args.results_dir is None:
+            args.results_dir = hurricane_results
+        if args.sweeps_dir is None:
+            args.sweeps_dir = os.path.join(hurricane_results, "sweeps")
+        if args.fields:
+            ref_fields = parse_field_list(args.fields)
+        else:
+            ref_fields = discover_fields(
+                args.hurricane_dir, args.timestep, args.n_fields)
+        if not ref_fields:
+            print("ERROR: no fields found under {}".format(args.hurricane_dir),
+                  file=sys.stderr)
+            sys.exit(2)
+        train_csv, _ = resolve_timestep_pair(
+            args.results_dir, args.sweeps_dir,
+            stem(ref_fields[0], args.timestep),
         )
         ref_train = load_sweep_csv(train_csv)
 
@@ -449,8 +588,10 @@ def main():
 
     if args.case == "same_field":
         grids, case_name, written, summary = run_same_field(args, degrees, alphas)
-    else:
+    elif args.case == "cloud_timesteps":
         grids, case_name, written, summary = run_cloud_timesteps(args, degrees, alphas)
+    else:
+        grids, case_name, written, summary = run_fields(args, degrees, alphas)
 
     write_grid_csv(os.path.join(out_dir, "heatmap_grid.csv"), case_name, degrees, alphas, grids)
     write_summary(os.path.join(out_dir, "summary.txt"), summary)
