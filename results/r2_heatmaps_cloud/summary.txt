@@ -1,0 +1,12 @@
+CLOUD timestep R² heatmaps (oracle per timestep)
+============================================================
+results_dir  : /anvil/projects/x-cis240669/Hurricane/results
+sweeps_dir   : /anvil/projects/x-cis240669/Hurricane/results/sweeps
+field_prefix : CLOUD
+timesteps    : [1, 2, 3, 4, 5]
+n_replicates : 5
+degrees      : [1, 2, 3, 4, 5, 6, 7, 8]
+n_alphas     : 40
+
+Per timestep: fit on 20-pt train, R² on that file's 10k oracle.
+Heatmap stats: mean / p05 / p95 / var across timesteps.
