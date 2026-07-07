@@ -60,21 +60,34 @@ def mape_model_vs_oracle(oracle: dict, model: dict) -> dict:
     return fields
 
 
-def format_mape_block(oracle: dict, model: dict, mape: dict, n_grid: int | None = None) -> list[str]:
+def format_mape_block(
+    oracle: dict,
+    model: dict,
+    mape: dict,
+    n_grid: int | None = None,
+    *,
+    title: str | None = None,
+    model_label: str = "MODEL FINAL (measured at chosen e via sweep curve)",
+) -> list[str]:
     n_pts = n_grid if n_grid is not None else oracle.get("n_grid")
     grid_note = (
         "pressio oracle on {} measured sweep points".format(int(n_pts))
         if n_pts is not None
         else "pressio oracle on measured sweep grid"
     )
-    return [
-        "Validation — MODEL vs BASELINE ({})".format(grid_note),
-        "  BASELINE (oracle):",
-        "    error_bound       = {:.6g}".format(oracle["e"]),
-        "    compression_ratio = {:.6f}".format(oracle["cr"]),
-        "    psnr              = {:.6f}".format(oracle["psnr"]),
-        "    ssim              = {:.6f}".format(oracle["ssim"]),
-        "  MODEL FINAL (measured at chosen e via sweep curve):",
+    header = title if title is not None else "Validation — MODEL vs BASELINE ({})".format(
+        grid_note)
+    lines = [header]
+    if title is None:
+        lines += [
+            "  BASELINE (oracle):",
+            "    error_bound       = {:.6g}".format(oracle["e"]),
+            "    compression_ratio = {:.6f}".format(oracle["cr"]),
+            "    psnr              = {:.6f}".format(oracle["psnr"]),
+            "    ssim              = {:.6f}".format(oracle["ssim"]),
+        ]
+    lines += [
+        "  {}:".format(model_label),
         "    error_bound       = {:.6g}".format(model["e"]),
         "    compression_ratio = {:.6f}".format(model["cr"]),
         "    psnr              = {:.6f}".format(model["psnr"]),
@@ -85,4 +98,18 @@ def format_mape_block(oracle: dict, model: dict, mape: dict, n_grid: int | None 
         "    psnr              {:8.3f}".format(mape["psnr"]),
         "    ssim              {:8.3f}".format(mape["ssim"]),
         "    median            {:8.3f}".format(mape["median"]),
+    ]
+    return lines
+
+
+def format_oracle_header(oracle: dict, n_grid: int | None = None) -> list[str]:
+    n_pts = n_grid if n_grid is not None else oracle.get("n_grid")
+    grid_note = (
+        "pressio oracle on {} measured sweep points".format(int(n_pts))
+        if n_pts is not None
+        else "pressio oracle on measured sweep grid"
+    )
+    return [
+        "BASELINE (oracle, {}): error_bound={:.6g}  CR={:.6f}  PSNR={:.6f}  SSIM={:.6f}".format(
+            grid_note, oracle["e"], oracle["cr"], oracle["psnr"], oracle["ssim"]),
     ]

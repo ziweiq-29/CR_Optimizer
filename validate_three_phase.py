@@ -19,6 +19,7 @@ if _SCRIPT_DIR not in sys.path:
 from surrogate_lasso import load_sweep_csv  # noqa: E402
 from validation_metrics import (  # noqa: E402
     format_mape_block,
+    measured_at_e,
     mape_model_vs_oracle,
     pressio_oracle_grid,
 )
@@ -59,7 +60,14 @@ def load_model_final(summary_path: str) -> dict:
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--csv", required=True)
+    ap.add_argument(
+        "--baseline-csv", "--csv", dest="baseline_csv", required=True,
+        help="10k (or full) pressio baseline sweep CSV for oracle",
+    )
+    ap.add_argument(
+        "--train-csv", default=None,
+        help="optional training sweep; model e is re-evaluated on baseline if omitted",
+    )
     ap.add_argument("--summary", "--empirical-summary", dest="summary", required=True)
     ap.add_argument("--psnr-min", type=float, default=80.0)
     ap.add_argument("--ssim-min", type=float, default=0.9)
@@ -73,21 +81,30 @@ def main():
     out_dir = os.path.abspath(args.out)
     os.makedirs(out_dir, exist_ok=True)
 
-    df = load_sweep_csv(args.csv)
-    oracle = pressio_oracle_grid(df, args.psnr_min, args.ssim_min)
+    df_baseline = load_sweep_csv(args.baseline_csv)
+    oracle = pressio_oracle_grid(df_baseline, args.psnr_min, args.ssim_min)
     if oracle is None:
         print("Oracle infeasible.", file=sys.stderr)
         sys.exit(1)
 
     model = load_model_final(args.summary)
-    mape = mape_model_vs_oracle(oracle, model)
+    # Compare model e on the same measured baseline curve (log-interp on dense grid).
+    meas = measured_at_e(df_baseline, model["e"])
+    model_eval = {
+        "e": model["e"],
+        "cr": meas["cr"],
+        "psnr": meas["psnr"],
+        "ssim": meas["ssim"],
+    }
+    mape = mape_model_vs_oracle(oracle, model_eval)
     lines = [
-        "Validation: MODEL vs BASELINE (oracle)",
+        "Validation: MODEL vs BASELINE (pressio oracle)",
         "=" * 60,
-        "Constraints: PSNR >= {:.4g}, SSIM >= {:.4g}".format(
+        "Baseline CSV : {}".format(args.baseline_csv),
+        "Constraints    : PSNR >= {:.4g}, SSIM >= {:.4g}".format(
             args.psnr_min, args.ssim_min),
         "",
-    ] + format_mape_block(oracle, model, mape)
+    ] + format_mape_block(oracle, model_eval, mape, n_grid=len(df_baseline))
 
     report = "\n".join(lines)
     print(report)
@@ -95,7 +112,13 @@ def main():
     with open(os.path.join(out_dir, "validation_report.txt"), "w") as f:
         f.write(report + "\n")
     with open(os.path.join(out_dir, "validation_summary.json"), "w") as f:
-        json.dump({"oracle": oracle, "model": model, "mape_pct": mape}, f, indent=2)
+        json.dump({
+            "baseline_csv": args.baseline_csv,
+            "oracle": oracle,
+            "model_summary": model,
+            "model_eval_on_baseline": model_eval,
+            "mape_pct": mape,
+        }, f, indent=2)
 
     fig, ax = plt.subplots(figsize=(6, 4))
     labels = ["error_bound", "CR", "PSNR", "SSIM"]

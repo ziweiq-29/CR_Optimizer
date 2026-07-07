@@ -7,8 +7,8 @@ Change defaults or run_phase1() in three_phase_optimize.py — plots follow auto
 Example:
     cd /anvil/projects/x-cis240669/optimizer
     python plot_phase1_surrogates.py \\
-      --csv /anvil/projects/x-cis240669/Hurricane/results/CLOUDf01_sz3_sweep.csv \\
-      --out /anvil/projects/x-cis240669/Hurricane/results/three_phase_CLOUDf01/phase1
+      --csv /anvil/projects/x-cis240669/Hurricane/results/CLOUDf01/CLOUDf01_sz3_sweep.csv \\
+      --out /anvil/projects/x-cis240669/Hurricane/results/CLOUDf01/three_phase_CLOUDf01/phase1
 """
 
 from __future__ import annotations
@@ -31,7 +31,7 @@ _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 if _SCRIPT_DIR not in sys.path:
     sys.path.insert(0, _SCRIPT_DIR)
 
-from surrogate_lasso import LassoSurrogate, SurrogateBundle  # noqa: E402
+from surrogate_lasso import LassoSurrogate, PiecewiseLassoSurrogate, SurrogateBundle  # noqa: E402
 from three_phase_optimize import (  # noqa: E402
     DEFAULT_DEGREE,
     DEFAULT_PLOT_GRID_N,
@@ -40,19 +40,35 @@ from three_phase_optimize import (  # noqa: E402
 )
 
 
-def surrogate_to_dict(s: LassoSurrogate) -> dict:
-    return {
+def surrogate_to_dict(s: LassoSurrogate | PiecewiseLassoSurrogate) -> dict:
+    out = {
         "name": s.name,
         "transform": s.transform,
         "n_points": s.n_points,
         "alpha": s.alpha,
         "r2": s.r2,
         "rmse": s.rmse,
-        "intercept_raw": s.intercept_raw,
-        "coefs_raw": [float(c) for c in s.coefs_raw],
-        "feature_names": list(s.feature_names),
         "formula": s.formula_str(),
     }
+    if isinstance(s, LassoSurrogate):
+        out["intercept_raw"] = s.intercept_raw
+        out["coefs_raw"] = [float(c) for c in s.coefs_raw]
+        out["feature_names"] = list(s.feature_names)
+    else:
+        out["piecewise"] = True
+        out["n_segments"] = s.n_segments
+        out["breakpoints"] = list(s.breakpoints)
+        out["bic"] = s.bic
+        out["method"] = s.method
+        out["segments"] = [
+            {
+                "e_lo": elo,
+                "e_hi": ehi,
+                "surrogate": surrogate_to_dict(seg),
+            }
+            for elo, ehi, seg in s.segments
+        ]
+    return out
 
 
 def bundle_to_json(bundle: SurrogateBundle) -> dict:
@@ -103,6 +119,22 @@ def _format_equation(surrogate, width: int = 92) -> str:
     return "\n".join(lines)
 
 
+def _plot_surrogate_curve(ax, surrogate, e_lo, e_hi, n_grid, *, color="r-", label="Lasso surrogate"):
+    if isinstance(surrogate, PiecewiseLassoSurrogate):
+        for i, (seg_lo, seg_hi, seg) in enumerate(surrogate.segments):
+            xg = _log_e_grid(seg_lo, seg_hi, max(32, n_grid // max(1, surrogate.n_segments)))
+            eg = np.power(10.0, xg)
+            ax.plot(
+                xg, seg(eg), color="C3" if i else "r", lw=2,
+                label=label if i == 0 else None,
+            )
+        for bp in surrogate.breakpoints:
+            ax.axvline(math.log10(bp), color="0.45", ls="--", lw=1, zorder=2)
+    else:
+        xg = _log_e_grid(e_lo, e_hi, n_grid)
+        ax.plot(xg, surrogate(np.power(10.0, xg)), color, lw=2, label=label)
+
+
 def plot_metric_fit(
     df, surrogate, y_col, y_label, out_path, e_lo, e_hi, n_grid, degree,
     baseline_df=None,
@@ -110,8 +142,6 @@ def plot_metric_fit(
     e = df["error_bound"].values.astype(float)
     y = df[y_col].values.astype(float)
     x = np.log10(e)
-    xg = _log_e_grid(e_lo, e_hi, n_grid)
-    yg = surrogate(np.power(10.0, xg))
 
     fig, ax = plt.subplots(figsize=(8, 6))
     if baseline_df is not None and len(baseline_df):
@@ -122,14 +152,18 @@ def plot_metric_fit(
             label="measured baseline ({} pts)".format(len(baseline_df)),
         )
     ax.scatter(x, y, color="C0", edgecolor="k", s=70, zorder=3, label="training data")
-    ax.plot(xg, yg, "r-", lw=2, label="Lasso surrogate")
+    _plot_surrogate_curve(ax, surrogate, e_lo, e_hi, n_grid)
+    title_extra = ""
+    if isinstance(surrogate, PiecewiseLassoSurrogate):
+        title_extra = ", segments={}".format(surrogate.n_segments)
     ax.set_xlabel(r"$\log_{10}(\mathrm{error\_bound})$")
     ax.set_ylabel(y_label)
     ax.set_title(
-        "{} surrogate (deg={}, transform={}, alpha={:.3g})\n"
+        "{} surrogate (deg={}, transform={}, alpha={:.3g}{})\n"
         "R2={:.4f}, RMSE={:.4g}, N={}".format(
             surrogate.name, degree, surrogate.transform,
-            surrogate.alpha, surrogate.r2, surrogate.rmse, surrogate.n_points,
+            surrogate.alpha, title_extra,
+            surrogate.r2, surrogate.rmse, surrogate.n_points,
         )
     )
     ax.grid(True, alpha=0.3)
@@ -153,8 +187,6 @@ def plot_metric_fit_transformed(
     y = surrogate.to_fit_space(df[y_col].values.astype(float))
     x = np.log10(e)
     xg = _log_e_grid(e_lo, e_hi, n_grid)
-    zg = surrogate.predict_fit_space(np.power(10.0, xg))
-    zlabel = surrogate.fit_space_label()
 
     fig, ax = plt.subplots(figsize=(8, 6))
     if baseline_df is not None and len(baseline_df):
@@ -163,7 +195,18 @@ def plot_metric_fit_transformed(
         ax.scatter(np.log10(be), bz, s=8, c="0.6", alpha=0.35, zorder=1,
                    label="measured baseline ({} pts)".format(len(baseline_df)))
     ax.scatter(x, y, color="C0", edgecolor="k", s=70, zorder=3, label="training data")
-    ax.plot(xg, zg, "r-", lw=2, label="polynomial fit (fit space)")
+    if isinstance(surrogate, PiecewiseLassoSurrogate):
+        for i, (seg_lo, seg_hi, seg) in enumerate(surrogate.segments):
+            sxg = _log_e_grid(seg_lo, seg_hi, max(32, n_grid // max(1, surrogate.n_segments)))
+            seg_e = np.power(10.0, sxg)
+            ax.plot(sxg, seg.predict_fit_space(seg_e), "r-", lw=2,
+                    label="polynomial fit (fit space)" if i == 0 else None)
+        for bp in surrogate.breakpoints:
+            ax.axvline(math.log10(bp), color="0.45", ls="--", lw=1, zorder=2)
+    else:
+        ax.plot(xg, surrogate.predict_fit_space(np.power(10.0, xg)), "r-", lw=2,
+                label="polynomial fit (fit space)")
+    zlabel = surrogate.fit_space_label()
     ax.set_xlabel(r"$\log_{10}(\mathrm{error\_bound})$")
     ax.set_ylabel(zlabel)
     ax.set_title(
@@ -246,7 +289,10 @@ def plot_overview(df, bundle, out_path, n_grid, degree, baseline_df=None) -> Non
                        label="measured baseline")
         ax.scatter(np.log10(e), y, color=color, edgecolor="k", s=55, zorder=3,
                    label="training data")
-        ax.plot(xg, surr(eg), "k-", lw=2, label="surrogate")
+        if isinstance(surr, PiecewiseLassoSurrogate):
+            _plot_surrogate_curve(ax, surr, e_lo, e_hi, n_grid, color="k-", label="surrogate")
+        else:
+            ax.plot(xg, surr(eg), "k-", lw=2, label="surrogate")
         ax.set_xlabel(r"$\log_{10}(e)$")
         ax.set_ylabel(ylab)
         ax.set_title("{}\nR2={:.4f}  RMSE={:.4g}".format(surr.name, surr.r2, surr.rmse))
@@ -325,6 +371,7 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     add_model_training_args(ap)
+    ap.add_argument("--csv", required=True, help="Phase-1 training sweep CSV")
     ap.add_argument("--out", required=True, help="output directory")
     ap.add_argument("--n-grid", type=int, default=DEFAULT_PLOT_GRID_N,
                     help="points for smooth curve plots")

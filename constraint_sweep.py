@@ -10,9 +10,9 @@ Edit CONSTRAINTS below, or pass pairs on the command line / via a file.
 Example:
     cd /anvil/projects/x-cis240669/optimizer
     python constraint_sweep.py \\
-      --csv /anvil/projects/x-cis240669/Hurricane/results/CLOUDf01_sz3_sweep.csv \\
-      --baseline-csv /anvil/projects/x-cis240669/Hurricane/results/three_phase_CLOUDf01/baseline_10000pts.csv \\
-      --out /anvil/projects/x-cis240669/Hurricane/results/three_phase_CLOUDf01/constraint_sweep
+      --csv /anvil/projects/x-cis240669/Hurricane/results/CLOUDf01/CLOUDf01_sz3_sweep.csv \\
+      --baseline-csv /anvil/projects/x-cis240669/Hurricane/results/CLOUDf01/three_phase_CLOUDf01/baseline_10000pts.csv \\
+      --out /anvil/projects/x-cis240669/Hurricane/results/CLOUDf01/three_phase_CLOUDf01/constraint_sweep
 
     # override constraints on CLI (pairs: psnr ssim psnr ssim ...)
     python constraint_sweep.py --csv ... --baseline-csv ... --out ... \\

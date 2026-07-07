@@ -13,33 +13,33 @@ Cases:
 
 Example (same field):
     python surrogate_r2_heatmap.py --case same_field \\
-      --train-csv ../Hurricane/results/CLOUDf01_sz3_sweep.csv \\
-      --baseline-csv ../Hurricane/results/three_phase_CLOUDf01/baseline_10000pts.csv \\
+      --train-csv ../Hurricane/results/CLOUDf01/CLOUDf01_sz3_sweep.csv \\
+      --baseline-csv ../Hurricane/results/CLOUDf01/three_phase_CLOUDf01/baseline_10000pts.csv \\
       --degrees 1,2,3,4,5,6,7,8 --n-alphas 40 \\
-      --out ../Hurricane/results/r2_heatmaps
+      --out ../Hurricane/results/CLOUDf01/r2_heatmaps
 
 Example (CLOUD timesteps f01-f24):
     python surrogate_r2_heatmap.py --case cloud_timesteps \\
-      --results-dir ../Hurricane/results \\
-      --sweeps-dir ../Hurricane/results/sweeps \\
+      --results-dir ../Hurricane/results/CLOUDf01 \\
+      --sweeps-dir ../Hurricane/results/CLOUDf01/sweeps \\
       --timesteps 1-24 \\
       --degrees 1,2,3,4,5,6,7,8 --n-alphas 40 \\
-      --out ../Hurricane/results/r2_heatmaps_cloud
+      --out ../Hurricane/results/CLOUDf01/r2_heatmaps_cloud
 
 Example (different fields at f01):
     python surrogate_r2_heatmap.py --case fields \\
-      --results-dir ../Hurricane/results \\
-      --sweeps-dir ../Hurricane/results/sweeps \\
+      --results-dir ../Hurricane/results/CLOUDf01 \\
+      --sweeps-dir ../Hurricane/results/CLOUDf01/sweeps \\
       --fields CLOUD,P,PRECIP,QCLOUD,QGRAUP --timestep 1 \\
       --degrees 1,2,3,4,5,6,7,8 --n-alphas 40 \\
-      --out ../Hurricane/results/r2_heatmaps_fields
+      --out ../Hurricane/results/CLOUDf01/r2_heatmaps_fields
 
-Prerequisite sweeps per field/timestep (single runner, choose bin via --input):
+Prerequisite sweeps per field/timestep (single runner, choose field via --field):
     cd ../Hurricane
-    python run_cloudf01_pressio_sweep.py --input PRECIPf01.bin --n 20 \\
-      --out results/PRECIPf01_sz3_sweep.csv --jobs 32 --resume
-    python run_cloudf01_pressio_sweep.py --input PRECIPf01.bin --n 10000 \\
-      --out results/sweeps/PRECIPf01_baseline10k.csv --jobs 32 --resume
+    python run_cloudf01_pressio_sweep.py --field PRECIPf01 --input PRECIPf01.bin --preset train \\
+      --jobs 32 --resume
+    python run_cloudf01_pressio_sweep.py --field PRECIPf01 --input PRECIPf01.bin --preset baseline \\
+      --jobs 32 --resume
 """
 
 from __future__ import annotations
@@ -69,14 +69,17 @@ from surrogate_lasso import (  # noqa: E402
     load_sweep_csv,
     oracle_mean_r2,
 )
+from hurricane_paths import (  # noqa: E402
+    DEFAULT_FIELD,
+    baseline_csv as hp_baseline_csv,
+    three_phase_out,
+    train_sweep_csv,
+)
 
 # Fallback paths for CLOUDf01 when using standard sweeps layout.
-CLOUDF01_TRAIN_ALT = (
-    "/anvil/projects/x-cis240669/Hurricane/results/CLOUDf01_sz3_sweep.csv"
-)
-CLOUDF01_BASELINE_ALT = (
-    "/anvil/projects/x-cis240669/Hurricane/results/three_phase_CLOUDf01/"
-    "baseline_10000pts.csv"
+CLOUDF01_TRAIN_ALT = train_sweep_csv(DEFAULT_FIELD)
+CLOUDF01_BASELINE_ALT = os.path.join(
+    three_phase_out(DEFAULT_FIELD), "baseline_10000pts.csv",
 )
 
 
@@ -117,7 +120,10 @@ def resolve_timestep_pair(
     ]
     if name == "CLOUDf01":
         train_candidates = [CLOUDF01_TRAIN_ALT] + train_candidates
-        baseline_candidates = [CLOUDF01_BASELINE_ALT] + baseline_candidates
+        baseline_candidates = [
+            CLOUDF01_BASELINE_ALT,
+            hp_baseline_csv(DEFAULT_FIELD),
+        ] + baseline_candidates
 
     train_csv = next((p for p in train_candidates if os.path.isfile(p)), None)
     baseline_csv = next((p for p in baseline_candidates if os.path.isfile(p)), None)
@@ -534,7 +540,7 @@ def main():
         sys.exit(2)
 
     hurricane_dir = os.path.join(os.path.dirname(_SCRIPT_DIR), "Hurricane")
-    hurricane_results = os.path.join(hurricane_dir, "results")
+    hurricane_results = os.path.join(hurricane_dir, "results", "CLOUDf01")
 
     if args.case == "same_field":
         if not args.train_csv or not args.baseline_csv:

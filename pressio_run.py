@@ -13,6 +13,14 @@ DEFAULT_PRESSIO = (
 )
 
 
+def compressor_eb_option(compressor: str, eb: float) -> str:
+    """Map error_bound knob to libpressio -o option for each compressor."""
+    comp = compressor.strip().lower()
+    if comp == "sperr":
+        return "sperr:tolerance={}".format(eb)
+    return "rel={}".format(eb)
+
+
 def build_pressio_cmd(
     pressio_bin: str,
     input_path: str,
@@ -29,7 +37,7 @@ def build_pressio_cmd(
         cmd += ["-d", str(d)]
     cmd += [
         "-t", dtype,
-        "-o", "rel={}".format(eb),
+        "-o", compressor_eb_option(compressor, eb),
         "-b", "external:launch_metric=print",
         "-m", "time", "-m", "size", "-m", "error_stat", "-m", "ssim",
         "-M", "all",
@@ -74,6 +82,7 @@ def run_pressio(
     elapsed = time.perf_counter() - t0
     combined = (proc.stdout or "") + "\n" + (proc.stderr or "")
     if proc.returncode != 0:
-        print("[pressio] failed rc={} at rel={:.6g}".format(proc.returncode, eb))
+        print("[pressio] failed rc={} at eb={:.6g} ({})".format(
+            proc.returncode, eb, compressor))
         return None, elapsed
     return parse_pressio_metrics(combined), elapsed
